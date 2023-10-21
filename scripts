@@ -1,0 +1,13 @@
+CREATE TABLE amazon.reviews (
+    id uuid PRIMARY KEY,
+    title text,
+    product_id varchar,
+    price varchar,
+    user_id varchar,
+    profile_name varchar,
+    helpfulness varchar,
+    score varchar,
+    time varchar,
+    summary text,
+    review_text text,
+);
