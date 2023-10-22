@@ -11,7 +11,9 @@ const app = {
     app.debounceTimeout = setTimeout(() => {
       if (searchValue.length >= 3) {
         m.request(`${SEARCH_URL}?queryText=${searchValue}`).then((e) => {
-          app.searchResults = e;
+          console.log(e);
+          app.searchResults = e.map((e) => e.review_text);
+          console.log(app.searchResults);
         });
       } else {
         app.searchResults = [];
