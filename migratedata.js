@@ -87,8 +87,12 @@ function getInsertionQueriesForWordSequenceIdxTable(doc, indexName) {
   const words = sanitisedWordsArr(doc.text);
   const wordsLenGreaterThan3 = words.filter((e) => e.length >= 3);
   let set = new Set();
-  wordsLenGreaterThan3.map((e) => set.add(e.slice(0, 3)));
+  wordsLenGreaterThan3.map((e) => {
+    const substrings = findSubstrings(e);
+    substrings.map((s) => set.add(s));
+  });
   const uniquePrefixes = [...set];
+  console.log({ uniquePrefixes });
 
   const prefixWithData = uniquePrefixes.map((e) => {
     const associatedWords = wordsLenGreaterThan3.filter((w) => w.startsWith(e));
@@ -121,4 +125,15 @@ async function truncateTables(client) {
     "truncate amazon.reviews_inverted_index_1;",
     "truncate amazon.reviews_inverted_index_2;",
   ]);
+}
+
+function findSubstrings(word) {
+  const substrings = [];
+  const wordLen = word.length;
+
+  for (let i = 3; i < wordLen; i++) {
+    substrings.push(word.slice(0, i + 1));
+  }
+
+  return substrings;
 }
