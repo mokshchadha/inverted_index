@@ -4,36 +4,47 @@ const crypto = require("crypto");
 const readline = require("node:readline/promises");
 const cassandra = require("cassandra-driver");
 
-function insertIntoTable(doc, client) {
+async function insertIntoTable(doc, client) {
   const docInsertionQuery = getInsertionQuery(doc);
   const indexName = "reviews_inverted_index";
   const queries1 = getInsertionQueriesForReviewTextIdx(doc, indexName);
   const queries2 = getInsertionQueriesForWordSequenceIdxTable(doc, indexName);
-  return client.batch([docInsertionQuery, ...queries1, ...queries2]);
+  const queries = [docInsertionQuery, ...queries1, ...queries2];
+
+  try {
+    const chunks = _.chunk(queries, 400);
+    for (c of chunks) {
+      await client.batch(c);
+    }
+  } catch (error) {
+    console.log({ queries });
+    console.error(error);
+  }
 }
 
 async function main() {
-  const fileStream = fs.createReadStream("data/arts.txt");
-  const rl = readline.createInterface({
-    input: fileStream,
-    crlfDelay: Infinity,
-  });
-
   const client = new cassandra.Client({
     contactPoints: ["127.0.0.1:9042", "h2"],
     localDataCenter: "datacenter1",
     keyspace: "amazon",
   });
   client.connect();
+
   await truncateTables(client);
 
+  const fileStream = fs.createReadStream("data/arts.txt");
+  const rl = readline.createInterface({
+    input: fileStream,
+    crlfDelay: Infinity,
+  });
+
   let doc = {};
-  let queries = [];
+  let documents = [];
 
   rl.on("line", (line) => {
     if (line.trim().length === 0) {
       doc.id = crypto.randomUUID();
-      insertIntoTable(doc, client);
+      documents.push(doc);
       doc = {};
       return;
     }
@@ -44,7 +55,11 @@ async function main() {
 
   rl.on("close", async () => {
     console.log("Finished reading the file.");
+    for (let doc of documents) {
+      await insertIntoTable(doc, client);
+    }
     client.shutdown();
+    console.log("client closed");
   });
 }
 
@@ -75,24 +90,35 @@ function getInsertionQuery(doc) {
 function getInsertionQueriesForReviewTextIdx(doc, indexName) {
   const words = sanitisedWordsArr(doc.text);
   const id = doc.id;
-  const queries = words.map((word) => ({
-    query: `UPDATE ${indexName}_1 SET ids = ids + {'${id}'} WHERE word = '${word}';`,
-    params: [],
-  }));
+  const queries = words
+    .map((word) => {
+      const final = removePunctuation(word);
+      if (final)
+        return {
+          query:
+            `UPDATE ${indexName}_1 SET ids = ids + {'${id}'} WHERE word = ` +
+            `'${removePunctuation(word)}';`,
+          params: [],
+        };
+    })
+    .filter((e) => e);
   return queries;
 }
 
 function getInsertionQueriesForWordSequenceIdxTable(doc, indexName) {
   const idxName = `${indexName}_2`;
   const words = sanitisedWordsArr(doc.text);
-  const wordsLenGreaterThan3 = words.filter((e) => e.length >= 3);
+
+  const wordsLenGreaterThan3 = words
+    .map(removePunctuation)
+    .filter((e) => e.length >= 3);
+
   let set = new Set();
   wordsLenGreaterThan3.map((e) => {
     const substrings = findSubstrings(e);
     substrings.map((s) => set.add(s));
   });
   const uniquePrefixes = [...set];
-  console.log({ uniquePrefixes });
 
   const prefixWithData = uniquePrefixes.map((e) => {
     const associatedWords = wordsLenGreaterThan3.filter((w) => w.startsWith(e));
@@ -120,11 +146,10 @@ function sanitisedWordsArr(text) {
 }
 
 async function truncateTables(client) {
-  client.batch([
-    "truncate amazon.reviews;",
-    "truncate amazon.reviews_inverted_index_1;",
-    "truncate amazon.reviews_inverted_index_2;",
-  ]);
+  await client.execute("truncate amazon.reviews;");
+  await client.execute("truncate amazon.reviews_inverted_index_1;");
+  await client.execute("truncate amazon.reviews_inverted_index_2;");
+  console.log("truncate data successfull");
 }
 
 function findSubstrings(word) {
@@ -136,4 +161,8 @@ function findSubstrings(word) {
   }
 
   return substrings;
+}
+
+function removePunctuation(word) {
+  return word.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()'"?<>|[\]\\]/g, "").trim();
 }
