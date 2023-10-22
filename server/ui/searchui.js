@@ -1,4 +1,37 @@
 const SEARCH_URL = "http://localhost:3000/search";
+
+const ListItem = {
+  view: (vnodes) => {
+    const data = vnodes.attrs;
+    console.log({ data });
+    const words = data.text
+      .split(" ")
+      .map((e) => m(SubstringHighlighter, { text: e }));
+    return m("li", words);
+  },
+};
+
+const SubstringHighlighter = {
+  view: function (vnode) {
+    const text = vnode.attrs.text;
+    const substring = app.searchString;
+
+    if (!substring) {
+      return m("span", text);
+    }
+
+    const parts = text.split(substring);
+
+    return parts.map((part, index) => {
+      if (index < parts.length - 1) {
+        return [m("strong", substring), m("span", part), m("span", " ")];
+      } else {
+        return [m("span", part), m("span", " ")];
+      }
+    });
+  },
+};
+
 const app = {
   searchString: "",
   searchResults: [],
@@ -37,7 +70,7 @@ const app = {
       }),
       m(
         "ul",
-        app.searchResults.map((result) => m("li", result))
+        app.searchResults.map((result) => m(ListItem, { text: result }))
       ),
     ]);
   },
